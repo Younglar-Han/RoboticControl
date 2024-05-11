@@ -13,6 +13,13 @@ class Link:
         self.dh_params_ = dh_params
 
     def transformation_matrix(self, theta):
+        """
+        Compute the transformation matrix for a given joint angle.
+        Args:
+            theta (float): Joint angle.
+        Returns:
+            np.array: Transformation matrix.
+        """
         alpha = self.dh_params_[0]
         a = self.dh_params_[1]
         d = self.dh_params_[2]
@@ -21,7 +28,7 @@ class Link:
         ct = math.cos(theta)
         sa = math.sin(alpha)
         ca = math.cos(alpha)
-        # crag dh parameter transformation matrix
+        # Transformation matrix calculation based on crag dh parameters
         trans = np.array([[ct, -st, 0, a],
                           [st*ca, ct * ca, - sa, -sa * d],
                           [st*sa, ct * sa,   ca,  ca * d],
@@ -30,9 +37,17 @@ class Link:
 
     @staticmethod
     def basic_jacobian(trans, ee_pos):
-        ''' calculate the basic jacobian matrix for a single joint '''
+        """
+        Compute the basic Jacobian matrix for a single joint.
+        Args:
+            trans (np.array): Transformation matrix.
+            ee_pos (np.array): End-effector position.
+        Returns:
+            np.array: Basic Jacobian matrix.
+        """
         pos = np.array(
             [trans[0, 3], trans[1, 3], trans[2, 3]])
+        # the angular velocity part of basic jacobian matrix
         z_axis = np.array(
             [trans[0, 2], trans[1, 2], trans[2, 2]])
 
@@ -51,7 +66,15 @@ class NLinkArm:
             self.link_list.append(Link(dh_params_list[i]))
 
     def transformation_matrix(self, thetas):
+        """
+        Compute the transformation matrix for a given set of the arm.
+        Args:
+            thetas (list): List of joint angles.
+        Returns:
+            np.array: Transformation matrix of the arm.
+        """
         trans = np.identity(4)
+        # Compute the transformation matrix of the arm by multiplying the transformation matrices of individual links
         for i in range(len(self.link_list)):
             trans = np.dot(
                 trans, self.link_list[i].transformation_matrix(thetas[i]))
@@ -66,6 +89,13 @@ class NLinkArm:
 
     def forward_kinematics(self, thetas):
         ''' return the end-effector pose in cartesian space in meter and rad '''
+        """
+        Compute forward kinematics of the arm.
+        Parameters:
+            thetas (list): Joint angles.
+        Returns:
+            list: the end-effector pose in cartesian space in meter and rads [x, y, z, alpha, beta, gamma].
+        """
         trans = self.transformation_matrix(thetas)
         #旋转矩阵转四元数
         rotation_matrix = trans[0:3, 0:3]
@@ -136,6 +166,7 @@ class NLinkArm:
 
 if __name__ == "__main__":
     rospy.init_node("jacobian_test")
+    # Publisher for tool pose, velocity, force
     tool_pose_pub = rospy.Publisher("/tool_pose_cartesian",PoseStamped,queue_size=1)
     tool_velocity_pub = rospy.Publisher("/tool_velocity_cartesian",Point,queue_size=1)
     tool_force_pub = rospy.Publisher("/tool_force_cartesian",Point,queue_size=1)
@@ -166,6 +197,7 @@ if __name__ == "__main__":
         tool_velocity = J.dot(velocities)  # velocity in cartesian space
         tool_force = np.linalg.pinv(J.T).dot(torques)  # force in cartesian space
 
+        # Publish tool pose, velocity, and force messages
         tool_pose_msg = PoseStamped()
         tool_pose_msg.header.stamp = rospy.Time.now()
         tool_pose_msg.header.frame_id = "base_link"

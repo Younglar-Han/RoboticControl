@@ -60,6 +60,8 @@ class NLinkArm:
                                   [1,  0, 0, 0],
                                   [0,  0, 1, 0],
                                   [0,  0, 0, 1]])
+        # np.set_printoptions(precision=3, suppress=True)
+        # print(trans)
         return trans
 
     def forward_kinematics(self, thetas):
@@ -150,6 +152,7 @@ if __name__ == "__main__":
     while not rospy.is_shutdown():
         # # TEST FORWARD KINEMATICS
         # thetas = np.array([0, 345, 75, 0, 300, 0])
+        # thetas = thetas / 180 * math.pi
         # print('HOME')
         # tool_pose = gen3_lite.forward_kinematics(thetas)
         # exit()

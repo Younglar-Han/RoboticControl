@@ -26,6 +26,9 @@ from kortex_api.autogen.messages import Base_pb2
 
 from kortex_api.Exceptions.KServerException import KServerException
 
+import rospy
+from geometry_msgs.msg import PoseStamped
+
 # Maximum allowed waiting time during actions (in seconds)
 TIMEOUT_DURATION = 20
 
@@ -299,6 +302,12 @@ def eval_performance(base, iter=300):
             logging.info(f'Joint {j}: {fdb_position[j]}')
 
 def main():
+    rospy.init_node("PID_grasp")
+    while not rospy.is_shutdown():
+        grasp_pose_cart = rospy.wait_for_message("/grasp_pose", PoseStamped)
+        if grasp_pose_cart is not None:
+            break
+    
     # Import the utilities helper module
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     import utilities
@@ -313,6 +322,7 @@ def main():
         base = BaseClient(router)
         Home_Position = np.array([0, -15, 75, 0, -60, 0])
         Zero_Position = np.array([0, 0, 0, 0, 0, 0])
+        Ready_Position = np.array([0, -15, 45, -90, -115, 0])
         # log depend on the current time
         logging.basicConfig(filename='joint_positions.log', filemode='w', level=logging.INFO, format='%(message)s')
         
@@ -324,11 +334,36 @@ def main():
         pids[4] = PIDController(4.0, 0.0, 0.0)
         pids[5] = PIDController(5.0, 0.0, 0.0)
         
-        test_position = np.array([0, -15, 75, 0, -60, 0])
-        test_position_T = forward_kinematics(test_position)
-        grasp_position = inverse_kinematics(base, test_position_T)
-        grasp_position = warp_to_range_array(grasp_position)
-        print("Grasp position: ", grasp_position)
+        # 从位姿变换到矩阵
+        grasp_pose_T = np.zeros((4, 4))
+        grasp_pose_T[0:3, 0:3] = R.from_quat([grasp_pose_cart.pose.orientation.x, grasp_pose_cart.pose.orientation.y, grasp_pose_cart.pose.orientation.z, grasp_pose_cart.pose.orientation.w]).as_matrix()
+        grasp_pose_T[0, 3] = grasp_pose_cart.pose.position.x
+        grasp_pose_T[1, 3] = grasp_pose_cart.pose.position.y
+        grasp_pose_T[2, 3] = grasp_pose_cart.pose.position.z
+        grasp_pose_T[3, 3] = 1
+        grasp_pose = inverse_kinematics(base, grasp_pose_T)
+        grasp_pose = warp_to_range_array(grasp_pose)
+        grasp_pose_T_val = forward_kinematics(grasp_pose)
+        if not np.allclose(grasp_pose_T, grasp_pose_T_val, atol=1e-2):
+            print("Inverse kinematics failed")
+            return 1
+        print("Grasp position: ", grasp_pose)
+        
+        success = True
+        success &= example_move_to_home_position(base)
+        success &= move_to_position_withpid(base, Ready_Position, pids)
+        example_send_gripper_command(base, 0.0)
+        time.sleep(2)
+        success &= move_to_position_withpid(base, grasp_pose, pids)
+        example_send_gripper_command(base, 0.6)
+        time.sleep(2)
+        
+
+        # test_position = np.array([0, -15, 75, 0, -60, 0])
+        # test_position_T = forward_kinematics(test_position)
+        # grasp_position = inverse_kinematics(base, test_position_T)
+        # grasp_position = warp_to_range_array(grasp_position)
+        # print("Grasp position: ", grasp_position)
         
         # pid_tuning(base, pids)
         
@@ -336,11 +371,11 @@ def main():
         # example_send_gripper_command(base, 0.0)
         # time.sleep(2)
         
-        test_position = np.array([0, -15, 45, -90, -115, 0])
-        test_position = np.array([0, 0, 0, 0, 0, 120])
-        success = True
-        success &= example_move_to_start_position(base)
-        success &= move_to_position_withpid(base, test_position, pids)
+        # test_position = np.array([0, -15, 45, -90, -115, 0])
+        # test_position = np.array([0, 0, 0, 0, 0, 120])
+        # success = True
+        # success &= example_move_to_start_position(base)
+        # success &= move_to_position_withpid(base, test_position, pids)
 
         return 0 if success else 1
 

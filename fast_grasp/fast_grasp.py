@@ -21,10 +21,8 @@ from scipy.spatial.transform import Rotation as R
 import logging
 
 from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
-from kortex_api.autogen.client_stubs.DeviceManagerClientRpc import DeviceManagerClient
-from kortex_api.autogen.client_stubs.DeviceConfigClientRpc import DeviceConfigClient
 
-from kortex_api.autogen.messages import Session_pb2, Base_pb2, Common_pb2
+from kortex_api.autogen.messages import Base_pb2
 
 from kortex_api.Exceptions.KServerException import KServerException
 
@@ -47,7 +45,7 @@ def check_for_end_or_abort(e):
             e.set()
     return check
 
-def example_move_to_start_position(base):
+def example_move_to_start_position(base, eval=False, iter=300):
     # Make sure the arm is in Single Level Servoing mode
     base_servo_mode = Base_pb2.ServoingModeInformation()
     base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
@@ -75,6 +73,9 @@ def example_move_to_start_position(base):
     base.PlayJointTrajectory(constrained_joint_angles)
 
     print("Waiting for movement to finish ...")
+    if eval:
+        eval_performance(base, iter=iter)
+        return True
     finished = e.wait(TIMEOUT_DURATION)
     base.Unsubscribe(notification_handle)
 
@@ -214,7 +215,7 @@ def pid_tuning(base, pids):
         plt.legend(["Joint 1", "Joint 2", "Joint 3", "Joint 4", "Joint 5", "Joint 6"])
     plt.show()
     
-def move_to_position_withpid(base, ref_position, pids, record=None):  
+def move_to_position_withpid(base, ref_position, pids, iter=10000):  
     ''' ref_position: in degrees, joint space'''
     success = True
     speeds = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -223,8 +224,8 @@ def move_to_position_withpid(base, ref_position, pids, record=None):
     success &= check_limit(ref_position)
     if not success:
         return False
-    N = 10000
-    total_interition = 0
+    N = iter
+    total_interition = iter
     tic = time.time()
     for i in range(N):
         # print("Iteration: ", i, end="\r")
@@ -239,7 +240,7 @@ def move_to_position_withpid(base, ref_position, pids, record=None):
         success &= example_send_joint_speeds(base, speeds=speeds)
         error = np.linalg.norm(ref_position - fdb_position)
         print("Error: ", error, end="\r")
-        if error < 1 or not success:
+        if (error < 1 or not success) and iter == 10000:
             total_interition = i
             break
     toc = time.time()
@@ -285,6 +286,18 @@ def warp_to_range_array(value, min_value = -180, max_value = 180):
         value[i] = warp_to_range(value[i], min_value, max_value)
     return value
 
+def eval_performance(base, iter=300):
+    logging.basicConfig(filename='joint_positions.log', filemode='w', level=logging.INFO, format='%(message)s')
+    N = iter
+    fdb_position = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    for i in range(N):
+        print("Iteration: ", i, end="\r")
+        base_feedback = base.GetMeasuredJointAngles()
+        for j in range(6):
+            fdb_position[j] = base_feedback.joint_angles[j].value
+            fdb_position[j] = warp_to_range(fdb_position[j])
+            logging.info(f'Joint {j}: {fdb_position[j]}')
+
 def main():
     # Import the utilities helper module
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -298,10 +311,12 @@ def main():
 
         # Init
         base = BaseClient(router)
+        Home_Position = np.array([0, -15, 75, 0, -60, 0])
+        Zero_Position = np.array([0, 0, 0, 0, 0, 0])
         # log depend on the current time
         logging.basicConfig(filename='joint_positions.log', filemode='w', level=logging.INFO, format='%(message)s')
         
-        pids = [PIDController(1.0, 0.0, 0.5) for _ in range(6)]
+        pids = [PIDController(1.0, 0.0, 0.0) for _ in range(6)]
         pids[0] = PIDController(2.0, 0.0, 0.0)
         pids[1] = PIDController(1.0, 0.0, 0.0)
         pids[2] = PIDController(1.0, 0.0, 0.0)
@@ -322,10 +337,11 @@ def main():
         # time.sleep(2)
         
         test_position = np.array([0, -15, 45, -90, -115, 0])
+        test_position = np.array([0, 0, 0, 0, 0, 120])
         success = True
-        success &= example_move_to_home_position(base)
-        # success &= move_to_position_withpid(base, test_position, pids)
-        
+        success &= example_move_to_start_position(base)
+        success &= move_to_position_withpid(base, test_position, pids)
+
         return 0 if success else 1
 
 if __name__ == "__main__":

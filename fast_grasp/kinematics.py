@@ -1,6 +1,5 @@
 # Kinematics using Denavit-Hartenberg parameters
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 
 def forward_kinematics(q):
     ''' q in degrees, joint space

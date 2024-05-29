@@ -1,3 +1,5 @@
 /EE368_0410/test_code/out
 /*.log
 /fast_grasp/__pycache__
+/fast_grasp/pre
+/fast_grasp/result

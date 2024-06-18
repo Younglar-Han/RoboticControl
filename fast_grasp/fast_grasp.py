@@ -194,8 +194,8 @@ def inverse_kinematics(base, T):
 def pid_tuning(base, pids):
     # pid tuning
     success = True
-    success &= example_move_to_home_position(base)
-    ref_position_final = np.array([0, 0, 0, 0, 0, 0])
+    success &= example_move_to_start_position(base)
+    ref_position_final = np.array([0, 0, 0, 0, 0, 120])
     N = 200
     fdb_record = np.zeros([6, N])
     for i in range(N):
@@ -247,6 +247,8 @@ def move_to_position_withpid(base, ref_position, pids, iter=10000):
             total_interition = i
             break
     toc = time.time()
+    if total_interition == 0:
+        total_interition = 1
     i_time = (toc - tic) / total_interition * 1000
     print("Average iteration time: ", i_time, "ms")
     if success:
@@ -302,12 +304,6 @@ def eval_performance(base, iter=300):
             logging.info(f'Joint {j}: {fdb_position[j]}')
 
 def main():
-    rospy.init_node("PID_grasp")
-    while not rospy.is_shutdown():
-        grasp_pose_cart = rospy.wait_for_message("/grasp_pose", PoseStamped)
-        if grasp_pose_cart is not None:
-            break
-    
     # Import the utilities helper module
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     import utilities
@@ -322,7 +318,8 @@ def main():
         base = BaseClient(router)
         Home_Position = np.array([0, -15, 75, 0, -60, 0])
         Zero_Position = np.array([0, 0, 0, 0, 0, 0])
-        Ready_Position = np.array([0, -15, 45, -90, -115, 0])
+        Ready_Position = np.array([6, -25, 72, -90, -80, -12])
+        Final_Position = np.array([-34, -55, 68, -90, -55, -88])
         # log depend on the current time
         logging.basicConfig(filename='joint_positions.log', filemode='w', level=logging.INFO, format='%(message)s')
         
@@ -331,15 +328,26 @@ def main():
         pids[1] = PIDController(1.0, 0.0, 0.0)
         pids[2] = PIDController(1.0, 0.0, 0.0)
         pids[3] = PIDController(1.5, 0.0, 0.0)
-        pids[4] = PIDController(4.0, 0.0, 0.0)
-        pids[5] = PIDController(5.0, 0.0, 0.0)
+        pids[4] = PIDController(1.0, 0.0, 0.0)
+        pids[5] = PIDController(4.0, 0.0, 0.0)
+
+        success = True
+        success &= move_to_position_withpid(base, Ready_Position, pids)
+        success &= example_send_joint_speeds(base, [0, 0, 0, 0, 0, 0])        
+        example_send_gripper_command(base, 0.0)
+        time.sleep(2)
         
+        rospy.init_node("PID_grasp")
+        while not rospy.is_shutdown():
+            grasp_pose_cart = rospy.wait_for_message("/grasp_pose", PoseStamped)
+            if grasp_pose_cart is not None:
+                break
         # 从位姿变换到矩阵
         grasp_pose_T = np.zeros((4, 4))
         grasp_pose_T[0:3, 0:3] = R.from_quat([grasp_pose_cart.pose.orientation.x, grasp_pose_cart.pose.orientation.y, grasp_pose_cart.pose.orientation.z, grasp_pose_cart.pose.orientation.w]).as_matrix()
         grasp_pose_T[0, 3] = grasp_pose_cart.pose.position.x
         grasp_pose_T[1, 3] = grasp_pose_cart.pose.position.y
-        grasp_pose_T[2, 3] = grasp_pose_cart.pose.position.z
+        grasp_pose_T[2, 3] = grasp_pose_cart.pose.position.z + 0.03
         grasp_pose_T[3, 3] = 1
         grasp_pose = inverse_kinematics(base, grasp_pose_T)
         grasp_pose = warp_to_range_array(grasp_pose)
@@ -349,33 +357,14 @@ def main():
             return 1
         print("Grasp position: ", grasp_pose)
         
-        success = True
-        success &= example_move_to_home_position(base)
+        success &= move_to_position_withpid(base, grasp_pose, pids)
+        example_send_gripper_command(base, 0.8)
+        time.sleep(2)
         success &= move_to_position_withpid(base, Ready_Position, pids)
+        success &= move_to_position_withpid(base, Final_Position, pids)
         example_send_gripper_command(base, 0.0)
         time.sleep(2)
-        success &= move_to_position_withpid(base, grasp_pose, pids)
-        example_send_gripper_command(base, 0.6)
-        time.sleep(2)
-        
-
-        # test_position = np.array([0, -15, 75, 0, -60, 0])
-        # test_position_T = forward_kinematics(test_position)
-        # grasp_position = inverse_kinematics(base, test_position_T)
-        # grasp_position = warp_to_range_array(grasp_position)
-        # print("Grasp position: ", grasp_position)
-        
-        # pid_tuning(base, pids)
-        
-        # Excute
-        # example_send_gripper_command(base, 0.0)
-        # time.sleep(2)
-        
-        # test_position = np.array([0, -15, 45, -90, -115, 0])
-        # test_position = np.array([0, 0, 0, 0, 0, 120])
-        # success = True
-        # success &= example_move_to_start_position(base)
-        # success &= move_to_position_withpid(base, test_position, pids)
+        success &= move_to_position_withpid(base, Ready_Position, pids)
 
         return 0 if success else 1
 
